@@ -76,19 +76,25 @@ router.get('/me', protect, async (req, res) => {
 // @route GET /api/auth/health
 router.get('/health', async (req, res) => {
   try {
+    const start = Date.now();
     const { data, error } = await supabase.from('profiles').select('id').limit(1);
+    const duration = Date.now() - start;
+    
     res.json({
       status: 'ok',
       supabase_connected: !error,
       supabase_error: error ? error.message : null,
+      response_time_ms: duration,
       env_check: {
         has_url: !!process.env.SUPABASE_URL,
         has_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-        url_start: process.env.SUPABASE_URL ? process.env.SUPABASE_URL.substring(0, 15) : 'none'
+        url: process.env.SUPABASE_URL ? `${process.env.SUPABASE_URL.substring(0, 20)}...` : 'none',
+        node_version: process.version
       }
     });
   } catch (err) {
-    res.status(500).json({ status: 'error', message: err.message });
+    console.error('❌ Health Check Exception:', err.message);
+    res.status(500).json({ status: 'error', message: err.message, stack: err.stack });
   }
 });
 

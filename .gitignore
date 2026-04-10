@@ -1,0 +1,39 @@
+# Dependency directories
+node_modules/
+
+# Env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+.next/
+out/
+build/
+dist/
+
+# Logs and system files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Backend data and temp files
+backend/data/
+backend/mongo.zip
+backend/mongodb/
+mongo-err.txt
+
+# Testing
+coverage/
+
+# IDE files
+.vscode/
+.idea/
+*.tsbuildinfo
+next-env.d.ts

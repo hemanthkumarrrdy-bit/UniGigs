@@ -1,0 +1,16 @@
+.page { padding: 32px 0; min-height: calc(100vh - 68px); }
+.stats { margin-bottom: 28px; }
+.statCard { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 24px; }
+.statCard span { font-size: 1.8rem; }
+.statCard strong { font-size: 1.8rem; font-weight: 800; color: var(--brand-light); }
+.statCard p { color: var(--text-secondary); font-size: 0.82rem; font-weight: 600; text-transform: uppercase; }
+.table { display: flex; flex-direction: column; }
+.tableHeader { display: grid; grid-template-columns: 3fr 1fr 1.2fr 1.2fr 1.2fr; gap: 12px; padding: 10px 0; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.row { display: grid; grid-template-columns: 3fr 1fr 1.2fr 1.2fr 1.2fr; gap: 12px; padding: 14px 0; align-items: center; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+.gigName { font-weight: 600; }
+.amount { font-weight: 700; color: var(--success); }
+.date { color: var(--text-muted); }
+@media (max-width: 768px) {
+  .tableHeader { display: none; }
+  .row { display: flex; flex-direction: column; gap: 6px; padding: 16px 0; }
+}

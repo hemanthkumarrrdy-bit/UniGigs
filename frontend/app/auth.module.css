@@ -1,0 +1,73 @@
+.page {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 40px 20px; position: relative; overflow: hidden;
+  background-color: #EFEBE0;
+  color: #333;
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+}
+.page::before {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 5vw;
+  background-color: #D6D0C4; left: 0; z-index: 0;
+}
+.page::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 5vw;
+  background-color: #D6D0C4; right: 0; z-index: 0;
+}
+
+.blob { display: none; }
+
+.card {
+  width: 100%; max-width: 440px;
+  background: #FFFFFF;
+  border: 1px solid #1A1A1A;
+  border-radius: 0; /* Brutalist flat aesthetic */
+  padding: 40px; position: relative; z-index: 10;
+  box-shadow: 12px 12px 0 rgba(26,26,26,0.1);
+  animation: fadeInUp 0.5s ease;
+  color: #1A1A1A;
+}
+.card form { font-family: 'Inter', sans-serif; }
+
+.logo { font-size: 1.5rem; font-weight: 800; margin-bottom: 24px; color: #FF6B00; }
+.title { font-size: 2rem; font-weight: 800; margin-bottom: 6px; color: #1A1A1A; letter-spacing: -0.5px; }
+.subtitle { color: #666; font-size: 0.9rem; margin-bottom: 24px; }
+
+.submitBtn { 
+  width: 100%; justify-content: center; margin-top: 16px; 
+  background: #FF6B00; color: #fff; border: 1px solid #FF6B00; 
+  border-radius: 999px; font-weight: 700; padding: 14px;
+  font-size: 1.05rem; transition: transform 0.2s, box-shadow 0.2s;
+}
+.submitBtn:hover { 
+  transform: translateY(-2px); 
+  box-shadow: 0 10px 20px rgba(255,107,0,0.2); 
+}
+
+.switch { text-align: center; color: #666; font-size: 0.88rem; margin-top: 24px; }
+.switch a { color: #1A1A1A; font-weight: 700; text-decoration: underline; }
+
+.steps { display: flex; align-items: center; margin-bottom: 24px; }
+.stepDot {
+  width: 28px; height: 28px; border-radius: 50%; border: 2px solid #ccc;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.78rem; font-weight: 700; color: #999;
+  transition: all var(--transition);
+}
+.stepDot.active { border-color: #FF6B00; background: #FF6B00; color: #fff; }
+.stepLine { flex: 1; height: 2px; background: #ccc; margin: 0 8px; }
+
+.roleSelect { display: flex; gap: 12px; }
+.roleBtn {
+  flex: 1; padding: 14px; border-radius: 0;
+  background: #F9F9F9; border: 1.5px solid #ccc;
+  color: #333; font-size: 0.95rem; font-weight: 700;
+  transition: all var(--transition); cursor: pointer;
+}
+.roleBtn:hover { border-color: #666; }
+.roleBtn.roleActive { border-color: #FF6B00; background: #FFF5EE; color: #FF6B00; }
+
+.backBtn { 
+  display: block; margin: 12px auto 0; color: #666; 
+  border-color: #ccc; border-radius: 999px;
+}
+.backBtn:hover { background: #f0f0f0; color: #333; border-color: #999; }

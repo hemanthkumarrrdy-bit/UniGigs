@@ -1,0 +1,42 @@
+.page { padding: 32px 0; min-height: calc(100vh - 68px); }
+.searchBar { display: flex; gap: 12px; margin-bottom: 28px; }
+.searchInput { flex: 1; }
+.layout { display: grid; grid-template-columns: 240px 1fr; gap: 28px; align-items: start; }
+.sidebar { position: sticky; top: 88px; }
+.filterTitle { font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 12px; }
+.catList { display: flex; flex-direction: column; gap: 4px; }
+.catBtn {
+  text-align: left; padding: 8px 12px; border-radius: var(--radius-sm);
+  background: none; border: none; color: var(--text-secondary);
+  font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: all var(--transition);
+}
+.catBtn:hover { background: var(--bg-input); color: var(--text); }
+.catBtn.catActive { background: rgba(124,58,237,0.12); color: var(--brand-light); font-weight: 600; }
+.budgetRow { display: flex; gap: 8px; }
+.budgetRow .form-input { flex: 1; padding: 8px 10px; }
+.main {}
+.resultHeader { margin-bottom: 16px; }
+.resultCount { color: var(--text-secondary); font-size: 0.9rem; font-weight: 600; }
+/* Gig Card */
+.gigCard {
+  display: flex; flex-direction: column; gap: 12px;
+  cursor: pointer; padding: 20px; text-decoration: none;
+}
+.gigCard:hover { transform: translateY(-4px); box-shadow: var(--shadow-brand); border-color: rgba(124,58,237,0.3); }
+.gigCardTop { display: flex; align-items: center; justify-content: space-between; }
+.gigCat { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
+.gigTitle { font-size: 1rem; font-weight: 700; line-height: 1.3; }
+.gigDesc { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; flex: 1; }
+.gigTags { display: flex; gap: 6px; flex-wrap: wrap; }
+.gigFooter { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+.clientInfo { display: flex; align-items: center; gap: 8px; }
+.clientName { font-size: 0.82rem; color: var(--text-secondary); font-weight: 600; }
+.gigMeta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.gigBudget { font-size: 1.1rem; font-weight: 800; color: var(--success); }
+.gigDeadline { font-size: 0.75rem; color: var(--text-muted); }
+/* Pagination */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 32px; color: var(--text-secondary); font-size: 0.9rem; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; }
+}

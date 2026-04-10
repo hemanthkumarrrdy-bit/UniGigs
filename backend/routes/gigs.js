@@ -1,5 +1,5 @@
 const express = require('express');
-const supabase = require('../config/supabase');
+const { db } = require('../config/firebase');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
@@ -9,29 +9,32 @@ router.get('/', protect, async (req, res) => {
   try {
     const { category, minBudget, maxBudget, status = 'open', search, page = 1, limit = 12 } = req.query;
     
-    let query = supabase
-      .from('gigs')
-      .select('*, client:profiles!client_id(name, avatar, rating), assignedTo:profiles!assigned_to(name, avatar)', { count: 'exact' });
+    let query = db.collection('gigs');
 
-    if (status) query = query.eq('status', status);
-    if (category) query = query.eq('category', category);
-    if (minBudget) query = query.gte('budget', Number(minBudget));
-    if (maxBudget) query = query.lte('budget', Number(maxBudget));
+    if (status) query = query.where('status', '==', status);
+    if (category) query = query.where('category', '==', category);
     
+    const snapshot = await query.orderBy('createdAt', 'desc').get();
+    let gigs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, _id: doc.id }));
+
+    if (minBudget) gigs = gigs.filter(g => g.budget >= Number(minBudget));
+    if (maxBudget) gigs = gigs.filter(g => g.budget <= Number(maxBudget));
     if (search) {
-      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+      const s = search.toLowerCase();
+      gigs = gigs.filter(g => g.title.toLowerCase().includes(s) || g.description.toLowerCase().includes(s));
     }
 
+    const count = gigs.length;
     const from = (page - 1) * limit;
-    const to = from + Number(limit) - 1;
+    const paginatedGigs = gigs.slice(from, from + Number(limit));
 
-    const { data: gigs, count, error } = await query
-      .order('created_at', { ascending: false })
-      .range(from, to);
+    // Fetch client info for each gig (simplified for now)
+    const gigsWithClient = await Promise.all(paginatedGigs.map(async gig => {
+      const clientDoc = await db.collection('profiles').doc(gig.client_id).get();
+      return { ...gig, client: clientDoc.exists ? clientDoc.data() : null };
+    }));
 
-    if (error) throw error;
-
-    res.json({ gigs, total: count, pages: Math.ceil(count / limit) });
+    res.json({ gigs: gigsWithClient, total: count, pages: Math.ceil(count / limit) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -40,20 +43,26 @@ router.get('/', protect, async (req, res) => {
 // GET /api/gigs/:id
 router.get('/:id', protect, async (req, res) => {
   try {
-    const { data: gig, error } = await supabase
-      .from('gigs')
-      .select('*, client:profiles!client_id(name, avatar, bio, rating, review_count), assignedTo:profiles!assigned_to(name, avatar)')
-      .eq('id', req.params.id)
-      .single();
+    const doc = await db.collection('gigs').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ message: 'Gig not found' });
+    
+    const gig = { ...doc.data(), id: doc.id, _id: doc.id };
+    
+    const clientDoc = await db.collection('profiles').doc(gig.client_id).get();
+    gig.client = clientDoc.exists ? clientDoc.data() : null;
 
-    if (error || !gig) return res.status(404).json({ message: 'Gig not found' });
+    if (gig.assigned_to) {
+      const assigneeDoc = await db.collection('profiles').doc(gig.assigned_to).get();
+      gig.assignedTo = assigneeDoc.exists ? assigneeDoc.data() : null;
+    }
+
     res.json(gig);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// POST /api/gigs - create gig (clients only)
+// POST /api/gigs
 router.post('/', protect, async (req, res) => {
   try {
     if (req.user.role !== 'client' && req.user.role !== 'admin')
@@ -61,17 +70,16 @@ router.post('/', protect, async (req, res) => {
     
     const { title, description, category, budget, deadline, tags, requirements, isRemote, location } = req.body;
     
-    const { data: gig, error } = await supabase
-      .from('gigs')
-      .insert({
-        title, description, category, budget, deadline, tags, requirements, isRemote, location,
-        client_id: req.user.id,
-      })
-      .select()
-      .single();
+    const gigData = {
+      title, description, category, budget, deadline, tags, requirements, isRemote, location,
+      client_id: req.user.id,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
 
-    if (error) throw error;
-    res.status(201).json(gig);
+    const docRef = await db.collection('gigs').add(gigData);
+    res.status(201).json({ ...gigData, id: docRef.id, _id: docRef.id });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -80,25 +88,16 @@ router.post('/', protect, async (req, res) => {
 // PUT /api/gigs/:id
 router.put('/:id', protect, async (req, res) => {
   try {
-    const { data: gig, error: fetchErr } = await supabase
-      .from('gigs')
-      .select('client_id')
-      .eq('id', req.params.id)
-      .single();
+    const gigRef = db.collection('gigs').doc(req.params.id);
+    const doc = await gigRef.get();
 
-    if (fetchErr || !gig) return res.status(404).json({ message: 'Gig not found' });
-    if (gig.client_id !== req.user.id)
+    if (!doc.exists) return res.status(404).json({ message: 'Gig not found' });
+    if (doc.data().client_id !== req.user.id)
       return res.status(403).json({ message: 'Not authorized' });
 
-    const { data: updated, error: updateErr } = await supabase
-      .from('gigs')
-      .update(req.body)
-      .eq('id', req.params.id)
-      .select()
-      .single();
-
-    if (updateErr) throw updateErr;
-    res.json(updated);
+    const updatedData = { ...req.body, updatedAt: new Date().toISOString() };
+    await gigRef.update(updatedData);
+    res.json({ ...doc.data(), ...updatedData, id: doc.id, _id: doc.id });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -107,38 +106,29 @@ router.put('/:id', protect, async (req, res) => {
 // DELETE /api/gigs/:id
 router.delete('/:id', protect, async (req, res) => {
   try {
-    const { data: gig, error: fetchErr } = await supabase
-      .from('gigs')
-      .select('client_id')
-      .eq('id', req.params.id)
-      .single();
+    const gigRef = db.collection('gigs').doc(req.params.id);
+    const doc = await gigRef.get();
 
-    if (fetchErr || !gig) return res.status(404).json({ message: 'Gig not found' });
-    if (gig.client_id !== req.user.id && req.user.role !== 'admin')
+    if (!doc.exists) return res.status(404).json({ message: 'Gig not found' });
+    if (doc.data().client_id !== req.user.id && req.user.role !== 'admin')
       return res.status(403).json({ message: 'Not authorized' });
 
-    const { error: deleteErr } = await supabase
-      .from('gigs')
-      .delete()
-      .eq('id', req.params.id);
-
-    if (deleteErr) throw deleteErr;
+    await gigRef.delete();
     res.json({ message: 'Gig deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// GET /api/gigs/my/posted - client's own gigs
+// GET /api/gigs/my/posted
 router.get('/my/posted', protect, async (req, res) => {
   try {
-    const { data: gigs, error } = await supabase
-      .from('gigs')
-      .select('*, assignedTo:profiles!assigned_to(name, avatar)')
-      .eq('client_id', req.user.id)
-      .order('created_at', { ascending: false });
+    const snapshot = await db.collection('gigs')
+      .where('client_id', '==', req.user.id)
+      .orderBy('createdAt', 'desc')
+      .get();
 
-    if (error) throw error;
+    const gigs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, _id: doc.id }));
     res.json(gigs);
   } catch (err) {
     res.status(500).json({ message: err.message });

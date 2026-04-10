@@ -1,5 +1,5 @@
 const express = require('express');
-const supabase = require('../config/supabase');
+const { db, admin } = require('../config/firebase');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
@@ -13,133 +13,140 @@ router.post('/', protect, async (req, res) => {
     const { gigId, coverLetter, proposedBudget } = req.body;
     
     // Check if gig is open
-    const { data: gig, error: gigErr } = await supabase
-      .from('gigs')
-      .select('client_id, title, status')
-      .eq('id', gigId)
-      .single();
-
-    if (gigErr || !gig || gig.status !== 'open')
+    const gigDoc = await db.collection('gigs').doc(gigId).get();
+    if (!gigDoc.exists || gigDoc.data().status !== 'open')
       return res.status(400).json({ message: 'Gig not available' });
 
-    // Check for existing application
-    const { data: existing } = await supabase
-      .from('applications')
-      .select('id')
-      .eq('gig_id', gigId)
-      .eq('applicant_id', req.user.id)
-      .single();
+    const gig = gigDoc.data();
 
-    if (existing) return res.status(400).json({ message: 'Already applied' });
+    // Check for existing application
+    const existing = await db.collection('applications')
+      .where('gig_id', '==', gigId)
+      .where('applicant_id', '==', req.user.id)
+      .get();
+
+    if (!existing.empty) return res.status(400).json({ message: 'Already applied' });
 
     // Create application
-    const { data: application, error: appErr } = await supabase
-      .from('applications')
-      .insert({
-        gig_id: gigId, applicant_id: req.user.id, cover_letter: coverLetter, proposed_budget: proposedBudget,
-      })
-      .select()
-      .single();
+    const appData = {
+      gig_id: gigId,
+      applicant_id: req.user.id,
+      cover_letter: coverLetter,
+      proposed_budget: proposedBudget,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    
+    const appRef = await db.collection('applications').add(appData);
 
-    if (appErr) throw appErr;
-
-    // Increment applications count (using a simple update for now, or RPC)
-    await supabase.rpc('increment_applications_count', { row_id: gigId });
+    // Increment applications count
+    await db.collection('gigs').doc(gigId).update({
+      applications_count: admin.firestore.FieldValue.increment(1)
+    });
 
     // Create Notification
-    await supabase.from('notifications').insert({
+    await db.collection('notifications').add({
       user_id: gig.client_id,
       type: 'application',
       title: 'New Application',
       message: `${req.user.name} applied for "${gig.title}"`,
       link: `/gigs/${gigId}/applications`,
+      isRead: false,
+      createdAt: new Date().toISOString()
     });
 
-    res.status(201).json(application);
+    res.status(201).json({ ...appData, id: appRef.id, _id: appRef.id });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// GET /api/applications/gig/:gigId - get all applications for a gig
+// GET /api/applications/gig/:gigId
 router.get('/gig/:gigId', protect, async (req, res) => {
   try {
-    const { data: gig, error: gigErr } = await supabase
-      .from('gigs')
-      .select('client_id')
-      .eq('id', req.params.gigId)
-      .single();
-
-    if (gigErr || !gig) return res.status(404).json({ message: 'Gig not found' });
-    if (gig.client_id !== req.user.id && req.user.role !== 'admin')
+    const gigDoc = await db.collection('gigs').doc(req.params.gigId).get();
+    if (!gigDoc.exists) return res.status(404).json({ message: 'Gig not found' });
+    
+    if (gigDoc.data().client_id !== req.user.id && req.user.role !== 'admin')
       return res.status(403).json({ message: 'Not authorized' });
 
-    const { data: applications, error: appErr } = await supabase
-      .from('applications')
-      .select('*, applicant:profiles!applicant_id(name, avatar, bio, skills, rating, review_count)')
-      .eq('gig_id', req.params.gigId);
+    const snapshot = await db.collection('applications')
+      .where('gig_id', '==', req.params.gigId)
+      .get();
 
-    if (appErr) throw appErr;
+    const applications = await Promise.all(snapshot.docs.map(async doc => {
+      const data = doc.data();
+      const applicantDoc = await db.collection('profiles').doc(data.applicant_id).get();
+      return { ...data, id: doc.id, _id: doc.id, applicant: applicantDoc.exists ? applicantDoc.data() : null };
+    }));
+
     res.json(applications);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// GET /api/applications/my - student's own applications
+// GET /api/applications/my
 router.get('/my', protect, async (req, res) => {
   try {
-    const { data: applications, error } = await supabase
-      .from('applications')
-      .select('*, gig:gigs(*, client:profiles!client_id(name, avatar))')
-      .eq('applicant_id', req.user.id)
-      .order('created_at', { ascending: false });
+    const snapshot = await db.collection('applications')
+      .where('applicant_id', '==', req.user.id)
+      .orderBy('createdAt', 'desc')
+      .get();
 
-    if (error) throw error;
+    const applications = await Promise.all(snapshot.docs.map(async doc => {
+      const data = doc.data();
+      const gigDoc = await db.collection('gigs').doc(data.gig_id).get();
+      let gig = gigDoc.exists ? { ...gigDoc.data(), id: gigDoc.id } : null;
+      
+      if (gig) {
+        const clientDoc = await db.collection('profiles').doc(gig.client_id).get();
+        gig.client = clientDoc.exists ? clientDoc.data() : null;
+      }
+
+      return { ...data, id: doc.id, _id: doc.id, gig };
+    }));
+
     res.json(applications);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// PUT /api/applications/:id/status - accept or reject
+// PUT /api/applications/:id/status
 router.put('/:id/status', protect, async (req, res) => {
   try {
     const { status } = req.body;
-    const { data: application, error: fetchErr } = await supabase
-      .from('applications')
-      .select('*, gig:gigs(*)')
-      .eq('id', req.params.id)
-      .single();
+    const appRef = db.collection('applications').doc(req.params.id);
+    const appDoc = await appRef.get();
 
-    if (fetchErr || !application) return res.status(404).json({ message: 'Application not found' });
-    if (application.gig.client_id !== req.user.id)
+    if (!appDoc.exists) return res.status(404).json({ message: 'Application not found' });
+    const appData = appDoc.data();
+    
+    const gigDoc = await db.collection('gigs').doc(appData.gig_id).get();
+    if (!gigDoc.exists || gigDoc.data().client_id !== req.user.id)
       return res.status(403).json({ message: 'Not authorized' });
 
-    const { data: updated, error: updateErr } = await supabase
-      .from('applications')
-      .update({ status })
-      .eq('id', req.params.id)
-      .select()
-      .single();
-
-    if (updateErr) throw updateErr;
+    await appRef.update({ status });
 
     if (status === 'accepted') {
-      await supabase
-        .from('gigs')
-        .update({ status: 'inprogress', assigned_to: application.applicant_id })
-        .eq('id', application.gig_id);
+      await db.collection('gigs').doc(appData.gig_id).update({
+        status: 'inprogress',
+        assigned_to: appData.applicant_id
+      });
 
-      await supabase.from('notifications').insert({
-        user_id: application.applicant_id,
+      await db.collection('notifications').add({
+        user_id: appData.applicant_id,
         type: 'application',
         title: 'Application Accepted!',
-        message: `Your application for "${application.gig.title}" was accepted`,
-        link: `/gigs/${application.gig_id}`,
+        message: `Your application for "${gigDoc.data().title}" was accepted`,
+        link: `/gigs/${appData.gig_id}`,
+        isRead: false,
+        createdAt: new Date().toISOString()
       });
     }
-    res.json(updated);
+
+    res.json({ ...appData, status, id: appDoc.id, _id: appDoc.id });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

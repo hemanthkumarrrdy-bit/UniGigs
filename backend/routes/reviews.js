@@ -1,5 +1,5 @@
 const express = require('express');
-const supabase = require('../config/supabase');
+const { db } = require('../config/firebase');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
@@ -10,30 +10,27 @@ router.post('/', protect, async (req, res) => {
     const { revieweeId, gigId, rating, comment } = req.body;
     
     // Check for existing review
-    const { data: exists } = await supabase
-      .from('reviews')
-      .select('id')
-      .eq('reviewer_id', req.user.id)
-      .eq('gig_id', gigId)
-      .single();
+    const existing = await db.collection('reviews')
+      .where('reviewer_id', '==', req.user.id)
+      .where('gig_id', '==', gigId)
+      .get();
 
-    if (exists) return res.status(400).json({ message: 'Already reviewed this gig' });
+    if (!existing.empty) return res.status(400).json({ message: 'Already reviewed this gig' });
 
     // Create review
-    const { data: review, error } = await supabase
-      .from('reviews')
-      .insert({
-        reviewer_id: req.user.id, reviewee_id: revieweeId, gig_id: gigId, rating, comment,
-      })
-      .select('*, reviewer:profiles!reviewer_id(name, avatar)')
-      .single();
-
-    if (error) throw error;
-
-    // Note: In production, aggregate rating/count updates should be done via a PostgreSQL Trigger 
-    // for data consistency, but we'll stick to a simple strategy for now.
+    const reviewData = {
+      reviewer_id: req.user.id,
+      reviewee_id: revieweeId,
+      gig_id: gigId,
+      rating,
+      comment,
+      createdAt: new Date().toISOString()
+    };
     
-    res.status(201).json(review);
+    const docRef = await db.collection('reviews').add(reviewData);
+    
+    const reviewerDoc = await db.collection('profiles').doc(req.user.id).get();
+    res.status(201).json({ ...reviewData, id: docRef.id, _id: docRef.id, reviewer: reviewerDoc.data() });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -42,13 +39,24 @@ router.post('/', protect, async (req, res) => {
 // GET /api/reviews/:userId
 router.get('/:userId', protect, async (req, res) => {
   try {
-    const { data: reviews, error } = await supabase
-      .from('reviews')
-      .select('*, reviewer:profiles!reviewer_id(name, avatar), gig:gigs(title)')
-      .eq('reviewee_id', req.params.userId)
-      .order('created_at', { ascending: false });
+    const snapshot = await db.collection('reviews')
+      .where('reviewee_id', '==', req.params.userId)
+      .orderBy('createdAt', 'desc')
+      .get();
 
-    if (error) throw error;
+    const reviews = await Promise.all(snapshot.docs.map(async doc => {
+      const data = doc.data();
+      const reviewerDoc = await db.collection('profiles').doc(data.reviewer_id).get();
+      const gigDoc = await db.collection('gigs').doc(data.gig_id).get();
+      return { 
+        ...data, 
+        id: doc.id, 
+        _id: doc.id, 
+        reviewer: reviewerDoc.exists ? reviewerDoc.data() : null,
+        gig: gigDoc.exists ? { title: gigDoc.data().title } : null
+      };
+    }));
+
     res.json(reviews);
   } catch (err) {
     res.status(500).json({ message: err.message });

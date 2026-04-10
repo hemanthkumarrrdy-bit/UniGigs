@@ -3,10 +3,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const connectDB = require('./config/db');
-const Message = require('./models/Message');
-
-// connectDB(); // Deactivated MongoDB for Supabase migration
+// Firebase initialized in routes/config
 
 const app = express();
 const server = http.createServer(app);
@@ -43,9 +40,22 @@ io.on('connection', (socket) => {
   socket.on('send_message', async (data) => {
     try {
       const { room, senderId, content, fileUrl, fileType } = data;
-      const message = await Message.create({ room, sender: senderId, content, fileUrl, fileType });
-      await message.populate('sender', 'name avatar');
-      io.to(room).emit('receive_message', message);
+      const { db } = require('./config/firebase');
+      
+      const msgData = {
+        room_id: room,
+        sender_id: senderId,
+        content,
+        file_url: fileUrl,
+        file_type: fileType,
+        createdAt: new Date().toISOString()
+      };
+      
+      const docRef = await db.collection('messages').add(msgData);
+      const senderDoc = await db.collection('profiles').doc(senderId).get();
+      
+      const fullMessage = { ...msgData, _id: docRef.id, sender: senderDoc.exists ? senderDoc.data() : null };
+      io.to(room).emit('receive_message', fullMessage);
     } catch (err) {
       console.error('Socket message error:', err.message);
     }

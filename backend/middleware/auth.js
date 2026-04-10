@@ -1,4 +1,4 @@
-const supabase = require('../config/supabase');
+const { auth, db } = require('../config/firebase');
 
 const protect = async (req, res, next) => {
   try {
@@ -8,28 +8,22 @@ const protect = async (req, res, next) => {
     }
     if (!token) return res.status(401).json({ message: 'Not authorized' });
 
-    // Verify token with Supabase
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    // Verify token with Firebase
+    const decodedToken = await auth.verifyIdToken(token);
     
-    if (error || !user) {
-      return res.status(401).json({ message: 'Token invalid or expired' });
-    }
-
-    // Fetch profile from our profiles table
-    const { data: profile, error: profileErr } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (profileErr || !profile) {
+    // Fetch profile from Firestore
+    const profileDoc = await db.collection('profiles').doc(decodedToken.uid).get();
+    
+    if (!profileDoc.exists) {
       return res.status(401).json({ message: 'User profile not found' });
     }
 
-    req.user = profile;
+    const profile = profileDoc.data();
+    req.user = { id: profileDoc.id, ...profile };
     next();
   } catch (err) {
-    res.status(401).json({ message: err.message });
+    console.error('❌ Auth Middleware Error:', err.message);
+    res.status(401).json({ message: 'Token invalid or expired' });
   }
 };
 

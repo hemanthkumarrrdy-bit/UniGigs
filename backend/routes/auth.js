@@ -11,15 +11,20 @@ router.post('/register', async (req, res) => {
     if (!name || !email || !password || !role)
       return res.status(400).json({ message: 'All fields required' });
 
-    const { data: { user, session }, error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { name, role } // This meta data is used by the PostgreSQL trigger to create a profile
+        data: { name, role }
       }
     });
 
-    if (error) return res.status(400).json({ message: error.message });
+    if (error) {
+      console.error('❌ Supabase Auth Error:', error.message);
+      return res.status(400).json({ message: error.message });
+    }
+
+    const { user, session } = data;
 
     res.status(201).json({
       _id: user.id,

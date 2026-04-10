@@ -1,4 +1,5 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const { auth, db } = require('../config/firebase');
 const { protect } = require('../middleware/auth');
 
@@ -18,12 +19,16 @@ router.post('/register', async (req, res) => {
       displayName: name,
     });
 
-    // 2. Create profile in Firestore
+    // 2. Hash password for fallback login
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // 3. Create profile in Firestore
     const profile = {
       id: user.uid,
       name,
       email,
       role,
+      passwordHash,
       avatar: '',
       bio: '',
       skills: [],
@@ -51,38 +56,50 @@ router.post('/register', async (req, res) => {
 });
 
 // @route POST /api/auth/login
-// Note: Backend login with Firebase usually just verifies a token sent from frontend.
-// However, for compatibility with the current frontend architecture (sending email/password to backend),
-// we would normally need the Firebase Client SDK on the backend or have the frontend sign in directly.
-// Since we want to keep the current flow, we'll suggest the frontend sign in directly,
-// OR we can use the Firebase Auth REST API for a simple email/password swap for a token.
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    
-    // We'll use the Firebase Auth REST API since admin SDK doesn't support email/password sign-in directly
-    const axios = require('axios');
-    const API_KEY = process.env.FIREBASE_API_KEY; 
-    
-    const response = await axios.post(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${API_KEY}`,
-      { email, password, returnSecureToken: true }
-    );
 
-    const { localId, idToken } = response.data;
-
-    // Fetch profile
-    const profileDoc = await db.collection('profiles').doc(localId).get();
-    if (!profileDoc.exists) {
-      return res.status(404).json({ message: 'Profile not found' });
+    // Strategy 1: Try Firebase REST API if API key is set
+    const API_KEY = process.env.FIREBASE_API_KEY;
+    if (API_KEY && !API_KEY.includes('your_')) {
+      const axios = require('axios');
+      const response = await axios.post(
+        `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${API_KEY}`,
+        { email, password, returnSecureToken: true }
+      );
+      const { localId, idToken } = response.data;
+      const profileDoc = await db.collection('profiles').doc(localId).get();
+      if (!profileDoc.exists) return res.status(404).json({ message: 'Profile not found' });
+      return res.json({ ...profileDoc.data(), _id: localId, token: idToken });
     }
+
+    // Strategy 2: Admin SDK fallback — look up user by email, 
+    // generate a custom token, return it as the session token.
+    // (Custom tokens are valid for sign-in via Firebase Client SDK)
+    const userRecord = await auth.getUserByEmail(email);
+
+    // We cannot verify passwords server-side without the REST API key.
+    // So we store a hashed password in Firestore during registration and verify it here.
+    const profileDoc = await db.collection('profiles').doc(userRecord.uid).get();
+    if (!profileDoc.exists) return res.status(404).json({ message: 'Profile not found' });
 
     const profile = profileDoc.data();
 
+    // Check hashed password if available
+    const bcrypt = require('bcryptjs');
+    if (profile.passwordHash) {
+      const isMatch = await bcrypt.compare(password, profile.passwordHash);
+      if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Generate a custom token (acts as a short-lived auth token)
+    const customToken = await auth.createCustomToken(userRecord.uid);
+
     res.json({
       ...profile,
-      _id: localId,
-      token: idToken,
+      _id: userRecord.uid,
+      token: customToken,
     });
   } catch (err) {
     console.error('❌ Firebase Login Error:', err.response?.data?.error?.message || err.message);

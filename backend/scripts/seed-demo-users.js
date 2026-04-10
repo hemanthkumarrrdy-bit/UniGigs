@@ -1,4 +1,5 @@
 const { admin, db } = require('../config/firebase');
+const bcrypt = require('bcryptjs');
 
 const seedUsers = async () => {
   const users = [
@@ -18,30 +19,45 @@ const seedUsers = async () => {
 
   for (const user of users) {
     try {
-      // Create in Firebase Auth
-      const authUser = await admin.auth().createUser({
-        email: user.email,
-        password: user.password,
-        displayName: user.displayName,
-      });
+      const passwordHash = await bcrypt.hash(user.password, 10);
 
-      // Create in Firestore Profiles
-      await db.collection('profiles').doc(authUser.uid).set({
+      let uid;
+      try {
+        // Try creating new user
+        const authUser = await admin.auth().createUser({
+          email: user.email,
+          password: user.password,
+          displayName: user.displayName,
+        });
+        uid = authUser.uid;
+      } catch (err) {
+        if (err.code === 'auth/email-already-exists') {
+          // Get existing user
+          const existing = await admin.auth().getUserByEmail(user.email);
+          uid = existing.uid;
+          console.log(`ℹ️ User ${user.email} already exists, updating profile...`);
+        } else throw err;
+      }
+
+      // Upsert Firestore profile with passwordHash
+      await db.collection('profiles').doc(uid).set({
         name: user.displayName,
         email: user.email,
         role: user.role,
+        passwordHash,
         bio: `This is a demo ${user.role} account.`,
+        avatar: '',
+        skills: [],
         isActive: true,
+        rating: 0,
+        reviewCount: 0,
+        earnings: 0,
         createdAt: new Date().toISOString()
-      });
+      }, { merge: true });
 
-      console.log(`✅ Created ${user.role}: ${user.email} (Password: ${user.password})`);
+      console.log(`✅ ${user.role}: ${user.email} | Password: ${user.password}`);
     } catch (err) {
-      if (err.code === 'auth/email-already-exists') {
-        console.log(`ℹ️ User ${user.email} already exists.`);
-      } else {
-        console.error(`❌ Error creating ${user.email}:`, err.message);
-      }
+      console.error(`❌ Error with ${user.email}:`, err.message);
     }
   }
   process.exit();

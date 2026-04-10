@@ -7,12 +7,29 @@ const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
+// Normalise allowed origins — strips trailing slash to avoid CORS mismatch
+const allowedOrigins = (process.env.CLIENT_URL || '')
+  .split(',')
+  .map(o => o.trim().replace(/\/$/, ''));
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow server-to-server requests (no origin) and any matching origin
+    if (!origin || allowedOrigins.some(o => origin.replace(/\/$/, '') === o)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origin ${origin} not allowed`));
+    }
+  },
+  credentials: true,
+};
+
 const io = new Server(server, {
-  cors: { origin: process.env.CLIENT_URL, methods: ['GET', 'POST'] },
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST'] },
 });
 
 // Middleware
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Routes

@@ -1,12 +1,8 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const supabase = require('../config/supabase');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
-
-const generateToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });
 
 // @route POST /api/auth/register
 router.post('/register', async (req, res) => {
@@ -14,12 +10,23 @@ router.post('/register', async (req, res) => {
     const { name, email, password, role } = req.body;
     if (!name || !email || !password || !role)
       return res.status(400).json({ message: 'All fields required' });
-    const exists = await User.findOne({ email });
-    if (exists) return res.status(400).json({ message: 'Email already registered' });
-    const user = await User.create({ name, email, password, role });
+
+    const { data: { user, session }, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name, role } // This meta data is used by the PostgreSQL trigger to create a profile
+      }
+    });
+
+    if (error) return res.status(400).json({ message: error.message });
+
     res.status(201).json({
-      _id: user._id, name: user.name, email: user.email, role: user.role,
-      token: generateToken(user._id),
+      _id: user.id,
+      name,
+      email: user.email,
+      role,
+      token: session?.access_token,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -30,14 +37,25 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
-    if (!user || !(await user.matchPassword(password)))
-      return res.status(401).json({ message: 'Invalid credentials' });
-    if (!user.isActive) return res.status(403).json({ message: 'Account suspended' });
+    
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) return res.status(401).json({ message: 'Invalid credentials' });
+
+    // Fetch the profile associated with this user
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', data.user.id)
+      .single();
+
     res.json({
-      _id: user._id, name: user.name, email: user.email, role: user.role,
-      avatar: user.avatar, bio: user.bio, skills: user.skills,
-      token: generateToken(user._id),
+      ...profile,
+      _id: profile.id, // maintain compatibility with frontend expected field names
+      token: data.session.access_token,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

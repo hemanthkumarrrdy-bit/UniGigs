@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
-import styles from '../auth.module.css';
+import styles from '../../auth.module.css';
 
 export default function EditProfilePage() {
   const { user, updateUser } = useAuth();

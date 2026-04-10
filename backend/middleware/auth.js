@@ -1,5 +1,4 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const supabase = require('../config/supabase');
 
 const protect = async (req, res, next) => {
   try {
@@ -9,12 +8,28 @@ const protect = async (req, res, next) => {
     }
     if (!token) return res.status(401).json({ message: 'Not authorized' });
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select('-password');
-    if (!req.user) return res.status(401).json({ message: 'User not found' });
+    // Verify token with Supabase
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) {
+      return res.status(401).json({ message: 'Token invalid or expired' });
+    }
+
+    // Fetch profile from our profiles table
+    const { data: profile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (profileErr || !profile) {
+      return res.status(401).json({ message: 'User profile not found' });
+    }
+
+    req.user = profile;
     next();
   } catch (err) {
-    res.status(401).json({ message: 'Token invalid' });
+    res.status(401).json({ message: err.message });
   }
 };
 

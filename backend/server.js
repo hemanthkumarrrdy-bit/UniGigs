@@ -6,7 +6,7 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const Message = require('./models/Message');
 
-connectDB();
+// connectDB(); // Deactivated MongoDB for Supabase migration
 
 const app = express();
 const server = http.createServer(app);

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
@@ -7,7 +7,7 @@ import styles from './gigs.module.css';
 
 const CATEGORIES = ['All', 'Design', 'Tech', 'Writing', 'Marketing', 'Local Help', 'Other'];
 
-export default function GigsPage() {
+function GigsList() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [gigs, setGigs] = useState<any[]>([]);
@@ -106,6 +106,14 @@ export default function GigsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function GigsPage() {
+  return (
+    <Suspense fallback={<div className="container" style={{paddingTop: 100, textAlign: 'center'}}><div className="spinner" /></div>}>
+      <GigsList />
+    </Suspense>
   );
 }
 

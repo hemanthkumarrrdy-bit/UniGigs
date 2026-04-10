@@ -1,6 +1,5 @@
 const express = require('express');
-const User = require('../models/User');
-const Review = require('../models/Review');
+const supabase = require('../config/supabase');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
@@ -9,16 +8,24 @@ const router = express.Router();
 router.get('/', protect, async (req, res) => {
   try {
     const { skill, search, page = 1, limit = 12 } = req.query;
-    const query = { role: 'student', isActive: true };
-    if (skill) query.skills = { $in: [skill] };
-    if (search) query.name = { $regex: search, $options: 'i' };
-    const users = await User.find(query)
-      .select('-password')
-      .skip((page - 1) * limit)
-      .limit(Number(limit))
-      .sort({ rating: -1 });
-    const total = await User.countDocuments(query);
-    res.json({ users, total, pages: Math.ceil(total / limit) });
+    
+    let query = supabase
+      .from('profiles')
+      .select('*', { count: 'exact' })
+      .eq('role', 'student');
+
+    if (skill) query = query.contains('skills', [skill]);
+    if (search) query = query.ilike('name', `%${search}%`);
+
+    const from = (page - 1) * limit;
+    const to = from + Number(limit) - 1;
+
+    const { data: users, count, error } = await query
+      .order('rating', { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    res.json({ users, total: count, pages: Math.ceil(count / limit) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -27,12 +34,21 @@ router.get('/', protect, async (req, res) => {
 // GET /api/users/:id
 router.get('/:id', protect, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    const reviews = await Review.find({ reviewee: req.params.id })
-      .populate('reviewer', 'name avatar')
-      .sort({ createdAt: -1 })
+    const { data: user, error: userErr } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (userErr || !user) return res.status(404).json({ message: 'User not found' });
+
+    const { data: reviews } = await supabase
+      .from('reviews')
+      .select('*, reviewer:profiles!reviewer_id(name, avatar)')
+      .eq('reviewee_id', req.params.id)
+      .order('created_at', { ascending: false })
       .limit(10);
+
     res.json({ user, reviews });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -42,13 +58,15 @@ router.get('/:id', protect, async (req, res) => {
 // PUT /api/users/profile
 router.put('/profile', protect, async (req, res) => {
   try {
-    const { name, bio, skills, portfolio, location, avatar } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { name, bio, skills, portfolio, location, avatar },
-      { new: true, runValidators: true }
-    ).select('-password');
-    res.json(user);
+    const { data: updated, error } = await supabase
+      .from('profiles')
+      .update(req.body)
+      .eq('id', req.user.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

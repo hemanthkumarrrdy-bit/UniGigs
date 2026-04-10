@@ -11,12 +11,12 @@ router.post('/register', async (req, res) => {
     if (!name || !email || !password || !role)
       return res.status(400).json({ message: 'All fields required' });
 
-    const { data, error } = await supabase.auth.signUp({
+    // Use admin API to bypass email confirmation for smoother UX
+    const { data: { user }, error } = await supabase.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: { name, role }
-      }
+      email_confirm: true,
+      user_metadata: { name, role }
     });
 
     if (error) {
@@ -24,16 +24,14 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: error.message });
     }
 
-    const { user, session } = data;
-
     res.status(201).json({
       _id: user.id,
       name,
       email: user.email,
       role,
-      token: session?.access_token,
     });
   } catch (err) {
+    console.error('❌ Registration Exception:', err.message);
     res.status(500).json({ message: err.message });
   }
 });
@@ -48,7 +46,10 @@ router.post('/login', async (req, res) => {
       password
     });
 
-    if (error) return res.status(401).json({ message: 'Invalid credentials' });
+    if (error) {
+      console.error('❌ Login Error:', error.message);
+      return res.status(401).json({ message: error.message === 'Email not confirmed' ? 'Please confirm your email or contact admin' : 'Invalid credentials' });
+    }
 
     // Fetch the profile associated with this user
     const { data: profile } = await supabase

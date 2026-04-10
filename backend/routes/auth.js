@@ -73,4 +73,23 @@ router.get('/me', protect, async (req, res) => {
   res.json(req.user);
 });
 
+// @route GET /api/auth/health
+router.get('/health', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('profiles').select('id').limit(1);
+    res.json({
+      status: 'ok',
+      supabase_connected: !error,
+      supabase_error: error ? error.message : null,
+      env_check: {
+        has_url: !!process.env.SUPABASE_URL,
+        has_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        url_start: process.env.SUPABASE_URL ? process.env.SUPABASE_URL.substring(0, 15) : 'none'
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
 module.exports = router;
